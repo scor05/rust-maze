@@ -42,10 +42,25 @@ fn render3D(player: &mut Player, maze: &mut Maze, fb: &mut Framebuffer, block_si
             fb.set_pixel(x, y);
         }
 
-        fb.set_current_color(Color::LIGHTGREEN);
+        match int.object {
+            '┌' | '┐' | '┘' | '└' => {
+                fb.set_current_color(Color::DARKGREEN);
+            }
+            '╶' | '╴' | '╵' | '╷' => {
+                fb.set_current_color(Color::from_hex("02e678").unwrap());
+            }
+            '┴' | '┬' | '├' | '┤' => {
+                fb.set_current_color(Color::GREEN);
+            }
+            _ => {
+                fb.set_current_color(Color::from_hex("02c265").unwrap());
+            }
+        }
         for y in stake_top..stake_bottom {
             fb.set_pixel(x, y);
         }
+
+        fb.set_current_color(Color::LIGHTGREEN);
     }
 }
 

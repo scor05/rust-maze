@@ -1,3 +1,4 @@
+use crate::caster::cast_ray;
 use crate::maze::Maze;
 use raylib::prelude::*;
 use std::f32::consts::PI;
@@ -29,12 +30,18 @@ pub fn process_input(player: &mut Player, rl: &mut RaylibHandle, maze: &mut Maze
     }
 
     if rl.is_key_down(KeyboardKey::KEY_UP) {
-        player.pos.x += MOVE_SPEED * player.a.cos();
-        player.pos.y += MOVE_SPEED * player.a.sin();
+        let int = cast_ray(player.a, maze, player, maze.block_size);
+        if (int.dist > MOVE_SPEED) {
+            player.pos.x += MOVE_SPEED * player.a.cos();
+            player.pos.y += MOVE_SPEED * player.a.sin();
+        }
     }
 
     if rl.is_key_down(KeyboardKey::KEY_DOWN) {
-        player.pos.x -= MOVE_SPEED * player.a.cos();
-        player.pos.y -= MOVE_SPEED * player.a.sin();
+        let int = cast_ray(player.a + PI, maze, player, maze.block_size);
+        if (int.dist > MOVE_SPEED) {
+            player.pos.x -= MOVE_SPEED * player.a.cos();
+            player.pos.y -= MOVE_SPEED * player.a.sin();
+        }
     }
 }
