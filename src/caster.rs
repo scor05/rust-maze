@@ -7,7 +7,7 @@ pub struct Intersect {
 }
 
 // castea un rayo en la dirección de la cámara
-pub fn cast_ray(angle: f32, maze: &Maze, player: &Player, block_size: usize) -> Intersect {
+pub fn cast_ray(angle: f32, maze: &Maze, player: &Player) -> Intersect {
     let mut d = 0.0;
 
     // loop es como un while
@@ -20,8 +20,8 @@ pub fn cast_ray(angle: f32, maze: &Maze, player: &Player, block_size: usize) -> 
 
         // para encontrar el índice del array (maze) con lo que chocó
         // como cada "bloque" es de block_size*block_size, se obtiene así:
-        let i = x / block_size;
-        let j = y / block_size;
+        let i = x / maze.block_size;
+        let j = y / maze.block_size;
 
         if maze.grid[j][i] != ' ' {
             return Intersect {

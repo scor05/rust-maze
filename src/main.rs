@@ -18,18 +18,21 @@ const CORNER_COLOR: Color = Color::DARKGREEN;
 const T_COLOR: Color = Color::GREEN;
 const WALL_COLOR: Color = Color::new(0x02, 0xc2, 0x65, 0xff);
 const EDGE_COLOR: Color = Color::new(0x02, 0xe6, 0x78, 0xff);
+const FOV: f32 = PI / 3.0;
+const FPS: u64 = 500;
+// FPS frames/sec ^-1 -> sec/frames * 1000 -> ms/frame
+const MS: u64 = 1000 / FPS;
 
 fn render3D(player: &mut Player, maze: &mut Maze, fb: &mut Framebuffer) {
     let hh = fb.height as f32 / 2.0;
-    let FOV = PI / 3.0;
     let a_0 = player.a - FOV / 2.0;
     let a_step = FOV / fb.width as f32;
-    let distance_to_projection = 300.0;
+    let distance_to_projection = 75.0;
 
     for x in 0..fb.width {
         let a = a_0 + (x as f32) * a_step;
 
-        let int = cast_ray(a, maze, player, maze.block_size);
+        let int = cast_ray(a, maze, player);
 
         // corrección fisheye
         let a_diff = a - player.a;
@@ -107,7 +110,43 @@ fn render2D(
                 _ => fb.set_current_color(WALL_COLOR),
             }
 
-            fb.set_pixel((y + map_y) as u32, (x + map_x) as u32);
+            fb.set_pixel((x + map_x) as u32, (y + map_y) as u32);
+        }
+    }
+
+    let player_x = player.pos.x * (scale_factor / maze.block_size as f32) + x as f32;
+    let player_y = player.pos.y * (scale_factor / maze.block_size as f32) + y as f32;
+    fb.set_current_color(Color::RED);
+    fb.set_pixel(player_x as u32, player_y as u32);
+
+    let player_size = 2; // rect de 2*playersize + 1
+    for x in player_x as u32 - player_size..player_x as u32 + player_size {
+        for y in player_y as u32 - player_size..player_y as u32 + player_size {
+            fb.set_pixel(x, y);
+        }
+    }
+
+    // dibujar fov 2d
+    fb.set_current_color(Color::YELLOW);
+    let ray_amount = 50;
+    let a_0 = player.a - FOV / 2.0;
+    let a_inc = FOV / ray_amount as f32;
+    let max_dist = (player_size + 1) * 12;
+    let min_dist = player_size + 1;
+    let ray_steps = 50;
+
+    for r in 0..ray_amount {
+        let a = a_0 + a_inc * r as f32;
+        let mut int = cast_ray(a, maze, player);
+        int.dist = (max_dist as f32)
+            .min(int.dist * (scale_factor / maze.block_size as f32))
+            .max(min_dist as f32);
+        let d_inc = int.dist / ray_steps as f32;
+        for d in 0..ray_steps {
+            fb.set_pixel(
+                (player_x + d as f32 * d_inc * a.cos()) as u32,
+                (player_y + d as f32 * d_inc * a.sin()) as u32,
+            );
         }
     }
 }
@@ -148,8 +187,7 @@ fn main() -> std::io::Result<()> {
 
         framebuffer.swap_buffers(&mut window, &raylib_thread);
 
-        // 60 frames/sec ^-1 -> 0.0166 sec/frames -> 16.67 ms/frame
-        thread::sleep(Duration::from_millis(16));
+        thread::sleep(Duration::from_millis(MS));
     }
 
     Ok(())
