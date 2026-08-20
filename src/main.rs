@@ -116,15 +116,7 @@ fn render2D(
 
     let player_x = player.pos.x * (scale_factor / maze.block_size as f32) + x as f32;
     let player_y = player.pos.y * (scale_factor / maze.block_size as f32) + y as f32;
-    fb.set_current_color(Color::RED);
-    fb.set_pixel(player_x as u32, player_y as u32);
-
     let player_size = 2; // rect de 2*playersize + 1
-    for x in player_x as u32 - player_size..player_x as u32 + player_size {
-        for y in player_y as u32 - player_size..player_y as u32 + player_size {
-            fb.set_pixel(x, y);
-        }
-    }
 
     // dibujar fov 2d
     fb.set_current_color(Color::YELLOW);
@@ -149,6 +141,14 @@ fn render2D(
             );
         }
     }
+
+    // dibujar cuadradito de jugador
+    fb.set_current_color(Color::RED);
+    for x in player_x as u32 - player_size..player_x as u32 + player_size {
+        for y in player_y as u32 - player_size..player_y as u32 + player_size {
+            fb.set_pixel(x, y);
+        }
+    }
 }
 
 fn main() -> std::io::Result<()> {
@@ -161,6 +161,9 @@ fn main() -> std::io::Result<()> {
         .title("Maze :D")
         .log_level(TraceLogLevel::LOG_WARNING)
         .build();
+
+    // lock cursor para solo la pantalla
+    window.disable_cursor();
 
     let mut framebuffer = Framebuffer::new(window_width as u32, window_height as u32);
 

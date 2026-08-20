@@ -30,6 +30,6 @@ pub fn cast_ray(angle: f32, maze: &Maze, player: &Player) -> Intersect {
             };
         }
 
-        d += 0.1;
+        d += 0.5;
     }
 }
