@@ -1,11 +1,17 @@
+use crate::bullet::Bullet;
 use crate::caster::cast_ray;
 use crate::maze::Maze;
 use raylib::prelude::*;
 use std::f32::consts::PI;
 
+const GUN_SOUND_PATH: &str = "./assets/audio/gunshot.mp3";
+
 pub struct Player {
     pub pos: Vector2,
     pub a: f32, // ángulo del jugador
+    pub bullets: Vec<Bullet>,
+    pub fired: bool,
+    pub gun_cooldown: f32,
 }
 
 impl Player {
@@ -13,6 +19,9 @@ impl Player {
         Self {
             pos: Vector2::new(xo, yo),
             a: PI / 2.0,
+            bullets: Vec::new(),
+            fired: false,
+            gun_cooldown: 0.75,
         }
     }
 }
@@ -30,6 +39,10 @@ pub fn process_input(player: &mut Player, rl: &mut RaylibHandle, maze: &mut Maze
     // delta retorna cambio de mouse pos desde el frame pasado
     let mouse_delta = rl.get_mouse_delta().scale(1.0 / 400.0);
     player.a += mouse_delta.x;
+
+    if rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT) {
+        player.fired = true;
+    }
 
     if rl.is_key_down(KeyboardKey::KEY_LEFT) {
         player.a -= rot_step;

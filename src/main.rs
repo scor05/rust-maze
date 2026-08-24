@@ -1,8 +1,10 @@
+mod bullet;
 mod caster;
 mod framebuffer;
 mod maze;
 mod player;
 
+use crate::bullet::Bullet;
 use crate::caster::*;
 use crate::framebuffer::Framebuffer;
 use crate::maze::Maze;
@@ -22,6 +24,82 @@ const FOV: f32 = PI / 3.0;
 const FPS: u64 = 500;
 // FPS frames/sec ^-1 -> sec/frames * 1000 -> ms/frame
 const MS: u64 = 1000 / FPS;
+const BACKGROUND_MUSIC_PATH: &str = "./assets/audio/Rip & Tear - Mick Gordon (128k).mp3";
+const BULLET_SIZE: f32 = 2.5;
+const BULLET_COLOR: Color = Color::new(84, 84, 84, 255);
+const BULLET_INITIAL_OFFSET: f32 = 10.0;
+const BULLET_SPEED: f32 = 1000.0;
+
+fn draw_bullets(
+    player: &mut Player,
+    maze: &mut Maze,
+    fb: &mut Framebuffer,
+    bullets: &mut Vec<Bullet>,
+    dt: f32,
+) {
+    let projection_distance = (fb.width as f32 / 2.0) / (FOV / 2.0).tan();
+
+    let forward_x = player.a.cos();
+    let forward_y = player.a.sin();
+
+    let right_x = -player.a.sin();
+    let right_y = player.a.cos();
+
+    for b in bullets {
+        let max_distance = cast_ray(b.a, maze, player).dist;
+
+        let relative_x = b.pos.x - player.pos.x;
+        let relative_y = b.pos.y - player.pos.y;
+
+        let depth = relative_x * forward_x + relative_y * forward_y;
+        let sideways = relative_x * right_x + relative_y * right_y;
+
+        if depth <= 0.0 || depth > max_distance {
+            b.active = false;
+            continue;
+        }
+
+        let screen_x = fb.width as f32 / 2.0 + sideways * projection_distance / depth;
+        let screen_y = fb.height as f32 / 2.0;
+        let screen_radius = b.radius * projection_distance / depth;
+
+        if b.active {
+            draw_filled_circle(
+                fb,
+                screen_x as i32,
+                screen_y as i32,
+                screen_radius as i32,
+                BULLET_COLOR,
+            );
+        }
+
+        b.pos.x += BULLET_SPEED * dt * b.a.cos();
+        b.pos.y += BULLET_SPEED * dt * b.a.sin();
+    }
+}
+
+fn draw_filled_circle(
+    fb: &mut Framebuffer,
+    center_x: i32,
+    center_y: i32,
+    radius: i32,
+    color: Color,
+) {
+    for offset_x in -radius..=radius {
+        let squared_height = radius * radius - offset_x * offset_x; // r^2 - x^2 = y^2
+
+        let half_height = (squared_height as f32).sqrt() as i32;
+
+        let pixel_x = center_x + offset_x;
+
+        for pixel_y in center_y - half_height..=center_y + half_height {
+            if pixel_x >= 0 && pixel_y >= 0 {
+                fb.set_current_color(color);
+                fb.set_pixel(pixel_x as u32, pixel_y as u32);
+            }
+        }
+    }
+}
 
 fn render3D(player: &mut Player, maze: &mut Maze, fb: &mut Framebuffer) {
     let hh = fb.height as f32 / 2.0;
@@ -156,6 +234,11 @@ fn main() -> std::io::Result<()> {
     let window_height = 720;
     let block_size = 100usize;
 
+    let audio = RaylibAudio::init_audio_device().expect("audio init fail");
+    let music = audio
+        .new_sound(BACKGROUND_MUSIC_PATH)
+        .expect("failed to load banger song");
+
     let (mut window, raylib_thread) = raylib::init()
         .size(window_width, window_height)
         .title("Maze :D")
@@ -167,18 +250,55 @@ fn main() -> std::io::Result<()> {
 
     let mut framebuffer = Framebuffer::new(window_width as u32, window_height as u32);
 
+    // para música de fondo
+    music.play();
+
     let mut maze = Maze::new("maze.txt", block_size)?;
     let mut player = Player::new(
         (3.0 / 2.0) * block_size as f32,
         (3.0 / 2.0) * block_size as f32,
     );
+    let mut current_cooldown = 0.0;
+    let mut bullets: Vec<Bullet> = Vec::new();
 
     // Image::load_image para cargar a ram
     // window.load_texture para cargar a tarjeta de video
 
     while !window.window_should_close() {
+        if !music.is_playing() {
+            music.play()
+        }
+
+        let dt = window.get_frame_time();
         process_input(&mut player, &mut window, &mut maze);
+
         render3D(&mut player, &mut maze, &mut framebuffer);
+
+        if player.fired {
+            if current_cooldown == 0.0 {
+                let initial = Vector2::new(
+                    player.pos.x + BULLET_INITIAL_OFFSET * player.a.cos(),
+                    player.pos.y + BULLET_INITIAL_OFFSET * player.a.sin(),
+                );
+                let bullet = Bullet {
+                    pos: initial,
+                    radius: BULLET_SIZE,
+                    color: BULLET_COLOR,
+                    a: player.a,
+                    active: true,
+                };
+                bullets.push(bullet);
+            }
+            current_cooldown += window.get_frame_time();
+        }
+
+        draw_bullets(&mut player, &mut maze, &mut framebuffer, &mut bullets, dt);
+
+        if current_cooldown >= player.gun_cooldown {
+            player.fired = !player.fired;
+            current_cooldown = 0.0;
+        }
+
         render2D(
             &mut player,
             &mut maze,
