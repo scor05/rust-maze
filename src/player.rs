@@ -4,12 +4,9 @@ use crate::maze::Maze;
 use raylib::prelude::*;
 use std::f32::consts::PI;
 
-const GUN_SOUND_PATH: &str = "./assets/audio/gunshot.mp3";
-
 pub struct Player {
     pub pos: Vector2,
     pub a: f32, // ángulo del jugador
-    pub bullets: Vec<Bullet>,
     pub fired: bool,
     pub gun_cooldown: f32,
 }
@@ -19,9 +16,8 @@ impl Player {
         Self {
             pos: Vector2::new(xo, yo),
             a: PI / 2.0,
-            bullets: Vec::new(),
             fired: false,
-            gun_cooldown: 0.75,
+            gun_cooldown: 0.35,
         }
     }
 }

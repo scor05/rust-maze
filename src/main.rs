@@ -25,6 +25,7 @@ const FPS: u64 = 500;
 // FPS frames/sec ^-1 -> sec/frames * 1000 -> ms/frame
 const MS: u64 = 1000 / FPS;
 const BACKGROUND_MUSIC_PATH: &str = "./assets/audio/Rip & Tear - Mick Gordon (128k).mp3";
+const GUN_SOUND_PATH: &str = "./assets/audio/deagle.mp3";
 const BULLET_SIZE: f32 = 2.5;
 const BULLET_COLOR: Color = Color::new(84, 84, 84, 255);
 const BULLET_INITIAL_OFFSET: f32 = 10.0;
@@ -45,8 +46,16 @@ fn draw_bullets(
     let right_x = -player.a.sin();
     let right_y = player.a.cos();
 
-    for b in bullets {
-        let max_distance = cast_ray(b.a, maze, player).dist;
+    for b in bullets.iter_mut() {
+        let travel_distance = BULLET_SPEED * dt;
+
+        if cast_bullet_ray(b.a, maze, b, travel_distance).is_some() {
+            b.active = false;
+            continue;
+        }
+
+        b.pos.x += travel_distance * b.a.cos();
+        b.pos.y += travel_distance * b.a.sin();
 
         let relative_x = b.pos.x - player.pos.x;
         let relative_y = b.pos.y - player.pos.y;
@@ -54,8 +63,16 @@ fn draw_bullets(
         let depth = relative_x * forward_x + relative_y * forward_y;
         let sideways = relative_x * right_x + relative_y * right_y;
 
-        if depth <= 0.0 || depth > max_distance {
-            b.active = false;
+        if depth <= 0.0 {
+            continue;
+        }
+
+        // no dibujar balas que estén detrás de una pared
+        let distance_to_bullet = relative_x.hypot(relative_y);
+        let angle_to_bullet = relative_y.atan2(relative_x);
+        let distance_to_wall = cast_ray(angle_to_bullet, maze, player).dist;
+
+        if distance_to_wall < distance_to_bullet - b.radius {
             continue;
         }
 
@@ -72,10 +89,9 @@ fn draw_bullets(
                 BULLET_COLOR,
             );
         }
-
-        b.pos.x += BULLET_SPEED * dt * b.a.cos();
-        b.pos.y += BULLET_SPEED * dt * b.a.sin();
     }
+
+    bullets.retain(|b| b.active);
 }
 
 fn draw_filled_circle(
@@ -237,7 +253,11 @@ fn main() -> std::io::Result<()> {
     let audio = RaylibAudio::init_audio_device().expect("audio init fail");
     let music = audio
         .new_sound(BACKGROUND_MUSIC_PATH)
-        .expect("failed to load banger song");
+        .expect("failed to load background soung");
+
+    let gun = audio
+        .new_sound(GUN_SOUND_PATH)
+        .expect("failed to load gun sound effects");
 
     let (mut window, raylib_thread) = raylib::init()
         .size(window_width, window_height)
@@ -287,6 +307,7 @@ fn main() -> std::io::Result<()> {
                     a: player.a,
                     active: true,
                 };
+                gun.play();
                 bullets.push(bullet);
             }
             current_cooldown += window.get_frame_time();
