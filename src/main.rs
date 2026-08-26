@@ -1,13 +1,17 @@
 mod bullet;
 mod caster;
+mod enemy;
 mod framebuffer;
+mod map;
 mod maze;
 mod player;
 mod world_textures;
 
 use crate::bullet::Bullet;
 use crate::caster::*;
+use crate::enemy::{Enemy, draw_enemies};
 use crate::framebuffer::Framebuffer;
+use crate::map::Map;
 use crate::maze::Maze;
 use crate::player::{Player, process_input};
 use crate::world_textures::{CpuTexture, WorldTextures};
@@ -39,6 +43,7 @@ const CONCRETE_TEXTURE_PATH: &str = "./assets/sprites/sand_concrete.png";
 const WALL1_TEXTURE_PATH: &str = "./assets/sprites/sand_wall1.png";
 const WALL2_TEXTURE_PATH: &str = "./assets/sprites/sand_wall2.png";
 const DEFUSE_SITE_TEXTURE_PATH: &str = "./assets/sprites/defuse_site.png";
+const ENEMY_TEXTURE_PATH: &str = "./assets/sprites/t_model.png";
 const DE_DUST2: &str = "./dust2.txt";
 const DE_MIRAGE: &str = "./mirage.txt";
 const DE_CACHE: &str = "./cache.txt";
@@ -49,12 +54,15 @@ const BULLET_SIZE: f32 = 2.5;
 const BULLET_COLOR: Color = Color::new(255, 40, 40, 255);
 const BULLET_INITIAL_OFFSET: f32 = 10.0;
 const BULLET_SPEED: f32 = 8000.0;
+const BLOCK_SIZE: usize = 100;
+const WALL_PROJECTION_DISTANCE: f32 = 200.0;
 
 fn draw_bullets(
     player: &mut Player,
     maze: &mut Maze,
     fb: &mut Framebuffer,
     bullets: &mut Vec<Bullet>,
+    enemies: &mut [Enemy],
     dt: f32,
 ) {
     let projection_distance = (fb.width as f32 / 2.0) / (FOV / 2.0).tan();
@@ -67,14 +75,27 @@ fn draw_bullets(
 
     for b in bullets.iter_mut() {
         let travel_distance = BULLET_SPEED * dt;
+        let bullet_direction = Vector2::new(b.a.cos(), b.a.sin());
+        let wall_hit = cast_bullet_ray(b.a, maze, b, travel_distance);
+        let enemy_hit =
+            Enemy::first_hit_by_bullet(enemies, b.pos, bullet_direction, b.radius, travel_distance);
 
-        if cast_bullet_ray(b.a, maze, b, travel_distance).is_some() {
+        if let Some((enemy_index, enemy_distance)) = enemy_hit
+            && wall_hit
+                .as_ref()
+                .is_none_or(|wall| enemy_distance < wall.dist)
+        {
+            enemies[enemy_index].active = false;
             b.active = false;
             continue;
         }
 
-        b.pos.x += travel_distance * b.a.cos();
-        b.pos.y += travel_distance * b.a.sin();
+        if wall_hit.is_some() {
+            b.active = false;
+            continue;
+        }
+
+        b.pos += bullet_direction * travel_distance;
 
         let relative_x = b.pos.x - player.pos.x;
         let relative_y = b.pos.y - player.pos.y;
@@ -149,13 +170,19 @@ fn viewmodel_destination(texture: &Texture2D, screen_width: i32, screen_height: 
     )
 }
 
-fn render3D(player: &mut Player, maze: &mut Maze, fb: &mut Framebuffer, textures: &WorldTextures) {
+fn render3D(
+    player: &mut Player,
+    maze: &mut Maze,
+    fb: &mut Framebuffer,
+    textures: &WorldTextures,
+) -> Vec<f32> {
     let hh = fb.height as f32 / 2.0;
     let a_0 = player.a - FOV / 2.0;
     let a_step = FOV / fb.width as f32;
-    let distance_to_projection = 200.0;
+    let distance_to_projection = WALL_PROJECTION_DISTANCE;
     let floor_projection_scale = hh * distance_to_projection / 2.0;
     let block_size = maze.block_size as f32;
+    let mut wall_depths = vec![f32::INFINITY; fb.width as usize];
 
     for x in 0..fb.width {
         let a = a_0 + (x as f32) * a_step;
@@ -167,6 +194,7 @@ fn render3D(player: &mut Player, maze: &mut Maze, fb: &mut Framebuffer, textures
         // corrección fisheye
         let a_diff = a - player.a;
         let corrected_distance = (int.dist * a_diff.cos()).max(0.001);
+        wall_depths[x as usize] = corrected_distance;
 
         let stake_height = (hh / corrected_distance) * distance_to_projection;
         let stake_top_unclipped = hh - stake_height / 2.0;
@@ -216,6 +244,8 @@ fn render3D(player: &mut Player, maze: &mut Maze, fb: &mut Framebuffer, textures
             texture_v += texture_v_step;
         }
     }
+
+    wall_depths
 }
 
 fn render2D(
@@ -265,11 +295,11 @@ fn render2D(
     let player_size = 2; // rect de 2*playersize + 1
 
     // dibujar fov 2d
-    fb.set_current_color(Color::YELLOW);
+    fb.set_current_color(Color::new(0, 255, 255, 255));
     let ray_amount = 50;
     let a_0 = player.a - FOV / 2.0;
     let a_inc = FOV / ray_amount as f32;
-    let max_dist = (player_size + 1) * 12;
+    let max_dist = (player_size + 1) * 4;
     let min_dist = player_size + 1;
     let ray_steps = 50;
 
@@ -289,7 +319,7 @@ fn render2D(
     }
 
     // dibujar cuadradito de jugador
-    fb.set_current_color(Color::RED);
+    fb.set_current_color(Color::BLUE);
     for x in player_x as u32 - player_size..player_x as u32 + player_size {
         for y in player_y as u32 - player_size..player_y as u32 + player_size {
             fb.set_pixel(x, y);
@@ -300,9 +330,8 @@ fn render2D(
 fn main() -> std::io::Result<()> {
     let window_width = 1280;
     let window_height = 720;
-    let framebuffer_width = (window_width / 2) as u32;
-    let framebuffer_height = (window_height / 2) as u32;
-    let block_size = 100usize;
+    let framebuffer_width = (window_width as f32 / 2.0) as u32;
+    let framebuffer_height = (window_height as f32 / 2.0) as u32;
 
     let audio = RaylibAudio::init_audio_device().expect("audio init fail");
     let music = audio
@@ -349,6 +378,8 @@ fn main() -> std::io::Result<()> {
     let wall2_image = Image::load_image(WALL2_TEXTURE_PATH).expect("failed to load wall2 texture");
     let defuse_site_image =
         Image::load_image(DEFUSE_SITE_TEXTURE_PATH).expect("failed to load defuse-site texture");
+    let enemy_image = Image::load_image(ENEMY_TEXTURE_PATH).expect("failed to load enemy texture");
+    let enemy_texture = CpuTexture::from_image(&enemy_image);
 
     let world_textures = WorldTextures {
         box_texture: CpuTexture::from_image(&box_image),
@@ -372,8 +403,15 @@ fn main() -> std::io::Result<()> {
 
     music.play();
 
-    let mut maze = Maze::new(DE_DUST2, block_size)?;
-    let mut player = Player::new(6.0 * block_size as f32, (3.0 / 2.0) * block_size as f32);
+    let de_dust2 = Map::new(DE_DUST2.to_string(), BLOCK_SIZE)?;
+    let de_mirage = Map::new(DE_MIRAGE.to_string(), BLOCK_SIZE)?;
+    let de_inferno = Map::new(DE_INFERNO.to_string(), BLOCK_SIZE)?;
+    let de_cache = Map::new(DE_CACHE.to_string(), BLOCK_SIZE)?;
+
+    let current_map = de_inferno;
+    let mut maze = current_map.maze;
+    let mut player = Player::new(current_map.spawn_location.x, current_map.spawn_location.y);
+    let mut enemies = Enemy::from_maze(&maze);
     let mut current_gun_cooldown = 0.0;
     let mut current_reload_cooldown = 0.0;
     let mut bullets: Vec<Bullet> = Vec::new();
@@ -394,7 +432,17 @@ fn main() -> std::io::Result<()> {
             reload.play();
         }
 
-        render3D(&mut player, &mut maze, &mut framebuffer, &world_textures);
+        let wall_depths = render3D(&mut player, &mut maze, &mut framebuffer, &world_textures);
+
+        draw_enemies(
+            &enemies,
+            &player,
+            &mut framebuffer,
+            &enemy_texture,
+            &wall_depths,
+            FOV,
+            WALL_PROJECTION_DISTANCE,
+        );
 
         if player.ammo == 0
             && window.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT)
@@ -427,7 +475,14 @@ fn main() -> std::io::Result<()> {
             current_gun_cooldown += window.get_frame_time();
         }
 
-        draw_bullets(&mut player, &mut maze, &mut framebuffer, &mut bullets, dt);
+        draw_bullets(
+            &mut player,
+            &mut maze,
+            &mut framebuffer,
+            &mut bullets,
+            &mut enemies,
+            dt,
+        );
 
         if current_reload_cooldown >= player.reload_time {
             player.ammo = 7;
@@ -465,6 +520,7 @@ fn main() -> std::io::Result<()> {
             &raylib_thread,
             active_viewmodel,
             viewmodel_dest,
+            player.ammo,
         );
 
         thread::sleep(Duration::from_millis(MS));

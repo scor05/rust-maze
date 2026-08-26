@@ -23,6 +23,10 @@ impl CpuTexture {
 
         self.pixels[y.min(self.height - 1) * self.width + x.min(self.width - 1)]
     }
+
+    pub fn aspect_ratio(&self) -> f32 {
+        self.width as f32 / self.height as f32
+    }
 }
 
 pub struct WorldTextures {

@@ -1,5 +1,24 @@
 use raylib::prelude::*;
 
+fn draw_outlined_text(
+    renderer: &mut impl RaylibDraw,
+    text: &str,
+    x: i32,
+    y: i32,
+    font_size: i32,
+    outline_size: i32,
+) {
+    for offset_y in -outline_size..=outline_size {
+        for offset_x in -outline_size..=outline_size {
+            if offset_x != 0 || offset_y != 0 {
+                renderer.draw_text(text, x + offset_x, y + offset_y, font_size, Color::BLACK);
+            }
+        }
+    }
+
+    renderer.draw_text(text, x, y, font_size, Color::WHITE);
+}
+
 // current_color sirve para pintar varios pixeles a la vez del mismo color
 pub struct Framebuffer {
     pub width: u32,
@@ -71,6 +90,32 @@ impl Framebuffer {
         }
     }
 
+    pub fn blend_pixel_color(&mut self, x: u32, y: u32, color: Color) {
+        if x >= self.width || y >= self.height || color.a == 0 {
+            return;
+        }
+
+        if color.a == 255 {
+            self.set_pixel_color(x, y, color);
+            return;
+        }
+
+        let index = ((y * self.width + x) * 4) as usize;
+        let alpha = color.a as u16;
+        let inverse_alpha = 255 - alpha;
+
+        self.color_buffer[index] = ((color.r as u16 * alpha
+            + self.color_buffer[index] as u16 * inverse_alpha)
+            / 255) as u8;
+        self.color_buffer[index + 1] = ((color.g as u16 * alpha
+            + self.color_buffer[index + 1] as u16 * inverse_alpha)
+            / 255) as u8;
+        self.color_buffer[index + 2] = ((color.b as u16 * alpha
+            + self.color_buffer[index + 2] as u16 * inverse_alpha)
+            / 255) as u8;
+        self.color_buffer[index + 3] = 255;
+    }
+
     pub fn set_background_color(&mut self, color: Color) {
         self.background_color = color;
     }
@@ -100,6 +145,7 @@ impl Framebuffer {
         raylib_thread: &RaylibThread,
         viewmodel: &Texture2D,
         viewmodel_dest: Rectangle,
+        ammo: u8,
     ) {
         self.screen_texture
             .update_texture(&self.color_buffer)
@@ -107,6 +153,19 @@ impl Framebuffer {
 
         let win_height = window.get_render_height();
         let win_width = window.get_render_width();
+        let fps_text = format!("FPS: {}", window.get_fps());
+        let ammo_text = format!("AMMO: {ammo}");
+        let ammo_font_size = 48;
+        let ammo_margin = 18;
+        let ammo_width = window.measure_text(&ammo_text, ammo_font_size);
+        let ammo_x = win_width - ammo_width - ammo_margin;
+        let ammo_y = win_height - ammo_font_size - ammo_margin;
+
+        let controls_text = format!("Movement: WASD\nShoot: LMB\nSprint: LSHIFT\nReload: R");
+        let controls_text_size = 20;
+        let controls_text_width = window.measure_text(&controls_text, controls_text_size);
+        let controls_x = win_width - controls_text_width - 10;
+        let controls_y = controls_text_size - 10;
 
         let mut renderer = window.begin_drawing(raylib_thread);
 
@@ -137,6 +196,17 @@ impl Framebuffer {
             Vector2::new(0.0, 0.0),
             0.0,
             Color::WHITE,
+        );
+
+        draw_outlined_text(&mut renderer, &fps_text, 12, 10, 18, 2);
+        draw_outlined_text(&mut renderer, &ammo_text, ammo_x, ammo_y, ammo_font_size, 2);
+        draw_outlined_text(
+            &mut renderer,
+            &controls_text,
+            controls_x,
+            controls_y,
+            controls_text_size,
+            2,
         );
     }
 }
