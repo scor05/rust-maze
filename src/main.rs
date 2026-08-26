@@ -3,12 +3,14 @@ mod caster;
 mod framebuffer;
 mod maze;
 mod player;
+mod world_textures;
 
 use crate::bullet::Bullet;
 use crate::caster::*;
 use crate::framebuffer::Framebuffer;
 use crate::maze::Maze;
 use crate::player::{Player, process_input};
+use crate::world_textures::{CpuTexture, WorldTextures};
 use raylib::prelude::*;
 use std::f32::consts::PI;
 use std::thread;
@@ -30,12 +32,23 @@ const EMPTY_GUN_SOUND_PATH: &str = "./assets/audio/empty_gun.mp3";
 const RELOAD_SOUND_PATH: &str = "./assets/audio/gun_reload.mp3";
 const VIEWMODEL_PATH: &str = "./assets/sprites/viewmodel.png";
 const VIEWMODEL_RELOAD_PATH: &str = "./assets/sprites/viewmodel_reload.png";
+const BOX_TEXTURE_PATH: &str = "./assets/sprites/box.png";
+const FLOOR_TEXTURE_PATH: &str = "./assets/sprites/sand_floor.png";
+const BRICKS_TEXTURE_PATH: &str = "./assets/sprites/sand_bricks.png";
+const CONCRETE_TEXTURE_PATH: &str = "./assets/sprites/sand_concrete.png";
+const WALL1_TEXTURE_PATH: &str = "./assets/sprites/sand_wall1.png";
+const WALL2_TEXTURE_PATH: &str = "./assets/sprites/sand_wall2.png";
+const DEFUSE_SITE_TEXTURE_PATH: &str = "./assets/sprites/defuse_site.png";
+const DE_DUST2: &str = "./dust2.txt";
+const DE_MIRAGE: &str = "./mirage.txt";
+const DE_CACHE: &str = "./cache.txt";
+const DE_INFERNO: &str = "./inferno.txt";
 const VIEWMODEL_HEIGHT_RATIO: f32 = 0.62;
 const VIEWMODEL_RIGHT_OFFSET: f32 = 110.0;
 const BULLET_SIZE: f32 = 2.5;
-const BULLET_COLOR: Color = Color::new(84, 84, 84, 255);
+const BULLET_COLOR: Color = Color::new(255, 40, 40, 255);
 const BULLET_INITIAL_OFFSET: f32 = 10.0;
-const BULLET_SPEED: f32 = 2000.0;
+const BULLET_SPEED: f32 = 8000.0;
 
 fn draw_bullets(
     player: &mut Player,
@@ -136,14 +149,18 @@ fn viewmodel_destination(texture: &Texture2D, screen_width: i32, screen_height: 
     )
 }
 
-fn render3D(player: &mut Player, maze: &mut Maze, fb: &mut Framebuffer) {
+fn render3D(player: &mut Player, maze: &mut Maze, fb: &mut Framebuffer, textures: &WorldTextures) {
     let hh = fb.height as f32 / 2.0;
     let a_0 = player.a - FOV / 2.0;
     let a_step = FOV / fb.width as f32;
-    let distance_to_projection = 75.0;
+    let distance_to_projection = 200.0;
+    let floor_projection_scale = hh * distance_to_projection / 2.0;
+    let block_size = maze.block_size as f32;
 
     for x in 0..fb.width {
         let a = a_0 + (x as f32) * a_step;
+        let ray_cos = a.cos();
+        let ray_sin = a.sin();
 
         let int = cast_ray(a, maze, player);
 
@@ -152,35 +169,51 @@ fn render3D(player: &mut Player, maze: &mut Maze, fb: &mut Framebuffer) {
         let corrected_distance = (int.dist * a_diff.cos()).max(0.001);
 
         let stake_height = (hh / corrected_distance) * distance_to_projection;
-        let stake_top = (hh - (stake_height / 2.0)).max(0.0) as u32;
-        let stake_bottom = (hh + (stake_height / 2.0)).min(fb.height as f32) as u32;
+        let stake_top_unclipped = hh - stake_height / 2.0;
+        let stake_bottom_unclipped = hh + stake_height / 2.0;
+        let stake_top = stake_top_unclipped.max(0.0) as u32;
+        let stake_bottom = stake_bottom_unclipped.min(fb.height as f32) as u32;
 
         fb.set_current_color(SKY_COLOR);
         for y in 0..stake_top {
             fb.set_pixel(x, y);
         }
 
-        fb.set_current_color(FLOOR_COLOR);
+        let cos_difference = a_diff.cos();
+        let floor_distance_scale = floor_projection_scale / cos_difference;
         for y in stake_bottom..fb.height {
-            fb.set_pixel(x, y);
+            let distance_from_horizon = y as f32 + 0.5 - hh;
+            let floor_distance = floor_distance_scale / distance_from_horizon;
+            let world_x = player.pos.x + floor_distance * ray_cos;
+            let world_y = player.pos.y + floor_distance * ray_sin;
+            let texture_u = world_x.rem_euclid(block_size) / block_size;
+            let texture_v = world_y.rem_euclid(block_size) / block_size;
+            let floor_symbol = maze.cell_at_world(world_x, world_y).unwrap_or(' ');
+            let color = textures.floor_color(floor_symbol, texture_u, texture_v);
+
+            fb.set_pixel_color(x, y, color);
         }
 
-        match int.object {
-            '┌' | '┐' | '┘' | '└' => {
-                fb.set_current_color(CORNER_COLOR);
-            }
-            '╶' | '╴' | '╵' | '╷' => {
-                fb.set_current_color(EDGE_COLOR);
-            }
-            '┴' | '┬' | '├' | '┤' => {
-                fb.set_current_color(T_COLOR);
-            }
-            _ => {
-                fb.set_current_color(WALL_COLOR);
-            }
-        }
+        let hit_x = player.pos.x + int.dist * ray_cos;
+        let hit_y = player.pos.y + int.dist * ray_sin;
+        let local_x = hit_x.rem_euclid(block_size);
+        let local_y = hit_y.rem_euclid(block_size);
+        let distance_to_vertical_edge = local_x.min(block_size - local_x);
+        let distance_to_horizontal_edge = local_y.min(block_size - local_y);
+        let texture_u = if distance_to_vertical_edge < distance_to_horizontal_edge {
+            local_y / block_size
+        } else {
+            local_x / block_size
+        };
+        let wall_texture = textures.wall_for(int.object);
+
+        let texture_v_step = 1.0 / stake_height;
+        let mut texture_v = (stake_top as f32 + 0.5 - stake_top_unclipped) * texture_v_step;
         for y in stake_top..stake_bottom {
-            fb.set_pixel(x, y);
+            let color = wall_texture.sample(texture_u, texture_v);
+
+            fb.set_pixel_color(x, y, color);
+            texture_v += texture_v_step;
         }
     }
 }
@@ -267,6 +300,8 @@ fn render2D(
 fn main() -> std::io::Result<()> {
     let window_width = 1280;
     let window_height = 720;
+    let framebuffer_width = (window_width / 2) as u32;
+    let framebuffer_height = (window_height / 2) as u32;
     let block_size = 100usize;
 
     let audio = RaylibAudio::init_audio_device().expect("audio init fail");
@@ -304,18 +339,41 @@ fn main() -> std::io::Result<()> {
         .load_texture_from_image(&raylib_thread, &viewmodel_reload_image)
         .expect("failed to upload reload viewmodel texture");
 
+    let box_image = Image::load_image(BOX_TEXTURE_PATH).expect("failed to load box texture");
+    let floor_image = Image::load_image(FLOOR_TEXTURE_PATH).expect("failed to load floor texture");
+    let bricks_image =
+        Image::load_image(BRICKS_TEXTURE_PATH).expect("failed to load bricks texture");
+    let concrete_image =
+        Image::load_image(CONCRETE_TEXTURE_PATH).expect("failed to load concrete texture");
+    let wall1_image = Image::load_image(WALL1_TEXTURE_PATH).expect("failed to load wall1 texture");
+    let wall2_image = Image::load_image(WALL2_TEXTURE_PATH).expect("failed to load wall2 texture");
+    let defuse_site_image =
+        Image::load_image(DEFUSE_SITE_TEXTURE_PATH).expect("failed to load defuse-site texture");
+
+    let world_textures = WorldTextures {
+        box_texture: CpuTexture::from_image(&box_image),
+        floor: CpuTexture::from_image(&floor_image),
+        bricks: CpuTexture::from_image(&bricks_image),
+        concrete: CpuTexture::from_image(&concrete_image),
+        wall1: CpuTexture::from_image(&wall1_image),
+        wall2: CpuTexture::from_image(&wall2_image),
+        defuse_site: CpuTexture::from_image(&defuse_site_image),
+    };
+
     // lock cursor para solo la pantalla
     window.disable_cursor();
 
-    let mut framebuffer = Framebuffer::new(window_width as u32, window_height as u32);
+    let mut framebuffer = Framebuffer::new(
+        framebuffer_width,
+        framebuffer_height,
+        &mut window,
+        &raylib_thread,
+    );
 
     music.play();
 
-    let mut maze = Maze::new("maze.txt", block_size)?;
-    let mut player = Player::new(
-        (3.0 / 2.0) * block_size as f32,
-        (3.0 / 2.0) * block_size as f32,
-    );
+    let mut maze = Maze::new(DE_DUST2, block_size)?;
+    let mut player = Player::new(6.0 * block_size as f32, (3.0 / 2.0) * block_size as f32);
     let mut current_gun_cooldown = 0.0;
     let mut current_reload_cooldown = 0.0;
     let mut bullets: Vec<Bullet> = Vec::new();
@@ -329,9 +387,14 @@ fn main() -> std::io::Result<()> {
         }
 
         let dt = window.get_frame_time();
+        let was_reloading = player.reloading;
         process_input(&mut player, &mut window, &mut maze);
 
-        render3D(&mut player, &mut maze, &mut framebuffer);
+        if player.reloading && !was_reloading {
+            reload.play();
+        }
+
+        render3D(&mut player, &mut maze, &mut framebuffer, &world_textures);
 
         if player.ammo == 0
             && window.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT)
@@ -342,9 +405,6 @@ fn main() -> std::io::Result<()> {
 
         if player.reloading {
             current_reload_cooldown += window.get_frame_time();
-            if !reload.is_playing() {
-                reload.play();
-            }
         }
 
         if player.fired && player.ammo > 0 && !player.reloading {
@@ -384,9 +444,9 @@ fn main() -> std::io::Result<()> {
             &mut player,
             &mut maze,
             &mut framebuffer,
-            250usize,
-            50usize,
-            50usize,
+            125usize,
+            25usize,
+            25usize,
         );
 
         let active_viewmodel = if player.reloading {

@@ -10,25 +10,28 @@ pub struct Intersect {
 // castea un rayo en la dirección de la cámara
 pub fn cast_ray(angle: f32, maze: &Maze, player: &Player) -> Intersect {
     let mut d = 0.0;
+    let direction_x = angle.cos();
+    let direction_y = angle.sin();
 
     // loop es como un while
     loop {
-        let c = d * angle.cos();
-        let s = d * angle.sin();
+        let c = d * direction_x;
+        let s = d * direction_y;
 
-        let x = (player.pos.x + c) as usize;
-        let y = (player.pos.y + s) as usize;
+        let world_x = player.pos.x + c;
+        let world_y = player.pos.y + s;
 
-        // para encontrar el índice del array (maze) con lo que chocó
-        // como cada "bloque" es de block_size*block_size, se obtiene así:
-        let i = x / maze.block_size;
-        let j = y / maze.block_size;
-
-        if maze.grid[j][i] != ' ' {
-            return Intersect {
-                dist: d,
-                object: maze.grid[j][i],
-            };
+        match maze.cell_at_world(world_x, world_y) {
+            Some(object) if Maze::is_solid_symbol(object) => {
+                return Intersect { dist: d, object };
+            }
+            Some(_) => {}
+            None => {
+                return Intersect {
+                    dist: d,
+                    object: '#',
+                };
+            }
         }
 
         d += 0.5;
@@ -57,14 +60,11 @@ pub fn cast_bullet_ray(
             });
         }
 
-        let column = world_x as usize / maze.block_size;
-        let row = world_y as usize / maze.block_size;
-
-        match maze.grid.get(row).and_then(|maze_row| maze_row.get(column)) {
-            Some(' ') => {}
-            Some(&object) => {
+        match maze.cell_at_world(world_x, world_y) {
+            Some(object) if Maze::is_solid_symbol(object) => {
                 return Some(Intersect { dist: d, object });
             }
+            Some(_) => {}
             None => {
                 return Some(Intersect {
                     dist: d,

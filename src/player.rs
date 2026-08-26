@@ -29,7 +29,7 @@ impl Player {
 }
 
 pub fn process_input(player: &mut Player, rl: &mut RaylibHandle, maze: &mut Maze) {
-    const MOVE_SPEED: f32 = 250.0;
+    const MOVE_SPEED: f32 = 300.0;
     const ROTATION_SPEED: f32 = PI / 0.75;
     const COLLISION_MARGIN: f32 = 1.0;
 
@@ -39,10 +39,10 @@ pub fn process_input(player: &mut Player, rl: &mut RaylibHandle, maze: &mut Maze
     let move_step = MOVE_SPEED * dt;
     let rot_step = ROTATION_SPEED * dt;
     // delta retorna cambio de mouse pos desde el frame pasado
-    let mouse_delta = rl.get_mouse_delta().scale(1.0 / 400.0);
+    let mouse_delta = rl.get_mouse_delta().scale(1.0 / 500.0);
     player.a += mouse_delta.x;
 
-    if rl.is_key_down(KeyboardKey::KEY_R) && !player.reloading && player.ammo < 7 {
+    if rl.is_key_pressed(KeyboardKey::KEY_R) && !player.reloading && player.ammo < 7 {
         player.reloading = true;
     }
 
