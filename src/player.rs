@@ -9,6 +9,9 @@ pub struct Player {
     pub a: f32, // ángulo del jugador
     pub fired: bool,
     pub gun_cooldown: f32,
+    pub ammo: u8,
+    pub reloading: bool,
+    pub reload_time: f32,
 }
 
 impl Player {
@@ -18,6 +21,9 @@ impl Player {
             a: PI / 2.0,
             fired: false,
             gun_cooldown: 0.35,
+            ammo: 7,
+            reloading: false,
+            reload_time: 2.2,
         }
     }
 }
@@ -35,6 +41,10 @@ pub fn process_input(player: &mut Player, rl: &mut RaylibHandle, maze: &mut Maze
     // delta retorna cambio de mouse pos desde el frame pasado
     let mouse_delta = rl.get_mouse_delta().scale(1.0 / 400.0);
     player.a += mouse_delta.x;
+
+    if rl.is_key_down(KeyboardKey::KEY_R) {
+        player.reloading = true;
+    }
 
     if rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT) {
         player.fired = true;

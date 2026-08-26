@@ -26,6 +26,8 @@ const FPS: u64 = 500;
 const MS: u64 = 1000 / FPS;
 const BACKGROUND_MUSIC_PATH: &str = "./assets/audio/Rip & Tear - Mick Gordon (128k).mp3";
 const GUN_SOUND_PATH: &str = "./assets/audio/deagle.mp3";
+const EMPTY_GUN_SOUND_PATH: &str = "./assets/audio/empty_gun.mp3";
+const RELOAD_SOUND_PATH: &str = "./assets/audio/gun_reload.mp3";
 const BULLET_SIZE: f32 = 2.5;
 const BULLET_COLOR: Color = Color::new(84, 84, 84, 255);
 const BULLET_INITIAL_OFFSET: f32 = 10.0;
@@ -259,6 +261,14 @@ fn main() -> std::io::Result<()> {
         .new_sound(GUN_SOUND_PATH)
         .expect("failed to load gun sound effects");
 
+    let empty_gun = audio
+        .new_sound(EMPTY_GUN_SOUND_PATH)
+        .expect("failed to load empty gun sound effects");
+
+    let reload = audio
+        .new_sound(RELOAD_SOUND_PATH)
+        .expect("failed to load gun reload sound effects");
+
     let (mut window, raylib_thread) = raylib::init()
         .size(window_width, window_height)
         .title("Maze :D")
@@ -270,7 +280,6 @@ fn main() -> std::io::Result<()> {
 
     let mut framebuffer = Framebuffer::new(window_width as u32, window_height as u32);
 
-    // para música de fondo
     music.play();
 
     let mut maze = Maze::new("maze.txt", block_size)?;
@@ -278,7 +287,8 @@ fn main() -> std::io::Result<()> {
         (3.0 / 2.0) * block_size as f32,
         (3.0 / 2.0) * block_size as f32,
     );
-    let mut current_cooldown = 0.0;
+    let mut current_gun_cooldown = 0.0;
+    let mut current_reload_cooldown = 0.0;
     let mut bullets: Vec<Bullet> = Vec::new();
 
     // Image::load_image para cargar a ram
@@ -294,8 +304,22 @@ fn main() -> std::io::Result<()> {
 
         render3D(&mut player, &mut maze, &mut framebuffer);
 
-        if player.fired {
-            if current_cooldown == 0.0 {
+        if player.ammo == 0
+            && window.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT)
+            && !player.reloading
+        {
+            empty_gun.play();
+        }
+
+        if player.reloading {
+            current_reload_cooldown += window.get_frame_time();
+            if !reload.is_playing() {
+                reload.play();
+            }
+        }
+
+        if player.fired && player.ammo > 0 && !player.reloading {
+            if current_gun_cooldown == 0.0 {
                 let initial = Vector2::new(
                     player.pos.x + BULLET_INITIAL_OFFSET * player.a.cos(),
                     player.pos.y + BULLET_INITIAL_OFFSET * player.a.sin(),
@@ -309,15 +333,22 @@ fn main() -> std::io::Result<()> {
                 };
                 gun.play();
                 bullets.push(bullet);
+                player.ammo -= 1;
             }
-            current_cooldown += window.get_frame_time();
+            current_gun_cooldown += window.get_frame_time();
         }
 
         draw_bullets(&mut player, &mut maze, &mut framebuffer, &mut bullets, dt);
 
-        if current_cooldown >= player.gun_cooldown {
+        if current_reload_cooldown >= player.reload_time {
+            player.ammo = 7;
+            player.reloading = false;
+            current_reload_cooldown = 0.0;
+        }
+
+        if current_gun_cooldown >= player.gun_cooldown {
             player.fired = !player.fired;
-            current_cooldown = 0.0;
+            current_gun_cooldown = 0.0;
         }
 
         render2D(
