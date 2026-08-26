@@ -42,7 +42,7 @@ pub fn process_input(player: &mut Player, rl: &mut RaylibHandle, maze: &mut Maze
     let mouse_delta = rl.get_mouse_delta().scale(1.0 / 400.0);
     player.a += mouse_delta.x;
 
-    if rl.is_key_down(KeyboardKey::KEY_R) {
+    if rl.is_key_down(KeyboardKey::KEY_R) && !player.reloading && player.ammo < 7 {
         player.reloading = true;
     }
 

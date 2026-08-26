@@ -54,7 +54,13 @@ impl Framebuffer {
         self.color_buffer.export_image(file_path);
     }
 
-    pub fn swap_buffers(&mut self, window: &mut RaylibHandle, raylib_thread: &RaylibThread) {
+    pub fn swap_buffers(
+        &mut self,
+        window: &mut RaylibHandle,
+        raylib_thread: &RaylibThread,
+        viewmodel: &Texture2D,
+        viewmodel_dest: Rectangle,
+    ) {
         if let Ok(texture) = window.load_texture_from_image(raylib_thread, &self.color_buffer) {
             let win_height = window.get_render_height();
             let win_width = window.get_render_width();
@@ -78,6 +84,22 @@ impl Framebuffer {
                 &texture,
                 source,
                 dest,
+                Vector2::new(0.0, 0.0),
+                0.0,
+                Color::WHITE,
+            );
+
+            let viewmodel_source = Rectangle::new(
+                0.0,
+                0.0,
+                viewmodel.width() as f32,
+                viewmodel.height() as f32,
+            );
+
+            renderer.draw_texture_pro(
+                viewmodel,
+                viewmodel_source,
+                viewmodel_dest,
                 Vector2::new(0.0, 0.0),
                 0.0,
                 Color::WHITE,

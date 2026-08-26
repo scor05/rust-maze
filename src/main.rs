@@ -28,10 +28,14 @@ const BACKGROUND_MUSIC_PATH: &str = "./assets/audio/Rip & Tear - Mick Gordon (12
 const GUN_SOUND_PATH: &str = "./assets/audio/deagle.mp3";
 const EMPTY_GUN_SOUND_PATH: &str = "./assets/audio/empty_gun.mp3";
 const RELOAD_SOUND_PATH: &str = "./assets/audio/gun_reload.mp3";
+const VIEWMODEL_PATH: &str = "./assets/sprites/viewmodel.png";
+const VIEWMODEL_RELOAD_PATH: &str = "./assets/sprites/viewmodel_reload.png";
+const VIEWMODEL_HEIGHT_RATIO: f32 = 0.62;
+const VIEWMODEL_RIGHT_OFFSET: f32 = 110.0;
 const BULLET_SIZE: f32 = 2.5;
 const BULLET_COLOR: Color = Color::new(84, 84, 84, 255);
 const BULLET_INITIAL_OFFSET: f32 = 10.0;
-const BULLET_SPEED: f32 = 1000.0;
+const BULLET_SPEED: f32 = 2000.0;
 
 fn draw_bullets(
     player: &mut Player,
@@ -117,6 +121,19 @@ fn draw_filled_circle(
             }
         }
     }
+}
+
+fn viewmodel_destination(texture: &Texture2D, screen_width: i32, screen_height: i32) -> Rectangle {
+    let target_height = screen_height as f32 * VIEWMODEL_HEIGHT_RATIO;
+    let scale = target_height / texture.height() as f32;
+    let target_width = texture.width() as f32 * scale;
+
+    Rectangle::new(
+        screen_width as f32 - target_width - VIEWMODEL_RIGHT_OFFSET,
+        screen_height as f32 - target_height,
+        target_width,
+        target_height,
+    )
 }
 
 fn render3D(player: &mut Player, maze: &mut Maze, fb: &mut Framebuffer) {
@@ -275,6 +292,18 @@ fn main() -> std::io::Result<()> {
         .log_level(TraceLogLevel::LOG_WARNING)
         .build();
 
+    let viewmodel_image =
+        Image::load_image(VIEWMODEL_PATH).expect("failed to load regular viewmodel image");
+    let viewmodel_texture = window
+        .load_texture_from_image(&raylib_thread, &viewmodel_image)
+        .expect("failed to upload regular viewmodel texture");
+
+    let viewmodel_reload_image =
+        Image::load_image(VIEWMODEL_RELOAD_PATH).expect("failed to load reload viewmodel image");
+    let viewmodel_reload_texture = window
+        .load_texture_from_image(&raylib_thread, &viewmodel_reload_image)
+        .expect("failed to upload reload viewmodel texture");
+
     // lock cursor para solo la pantalla
     window.disable_cursor();
 
@@ -360,7 +389,23 @@ fn main() -> std::io::Result<()> {
             50usize,
         );
 
-        framebuffer.swap_buffers(&mut window, &raylib_thread);
+        let active_viewmodel = if player.reloading {
+            &viewmodel_reload_texture
+        } else {
+            &viewmodel_texture
+        };
+        let viewmodel_dest = viewmodel_destination(
+            active_viewmodel,
+            window.get_render_width(),
+            window.get_render_height(),
+        );
+
+        framebuffer.swap_buffers(
+            &mut window,
+            &raylib_thread,
+            active_viewmodel,
+            viewmodel_dest,
+        );
 
         thread::sleep(Duration::from_millis(MS));
     }
