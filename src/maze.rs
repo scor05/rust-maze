@@ -39,7 +39,7 @@ impl Maze {
     }
 
     pub fn is_walkable_symbol(symbol: char) -> bool {
-        matches!(symbol, ' ' | 'P' | 'T' | 'X')
+        matches!(symbol, ' ' | 'P' | 'T' | '1' | '2')
     }
 
     pub fn is_solid_symbol(symbol: char) -> bool {

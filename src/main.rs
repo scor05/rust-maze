@@ -22,10 +22,11 @@ use std::time::Duration;
 
 const SKY_COLOR: Color = Color::SKYBLUE;
 const FLOOR_COLOR: Color = Color::GRAY;
-const CORNER_COLOR: Color = Color::DARKGREEN;
-const T_COLOR: Color = Color::GREEN;
-const WALL_COLOR: Color = Color::new(0x02, 0xc2, 0x65, 0xff);
-const EDGE_COLOR: Color = Color::new(0x02, 0xe6, 0x78, 0xff);
+const OOB_COLOR: Color = Color::BLACK;
+const BOX_COLOR: Color = Color::new(77, 33, 12, 0xff);
+const WALL_COLOR: Color = Color::new(251, 255, 219, 0xff);
+const ENEMY_COLOR: Color = Color::new(255, 0, 0, 255);
+const BOMB_COLOR: Color = Color::new(225, 255, 0, 255);
 const FOV: f32 = PI / 3.0;
 const FPS: u64 = 500;
 // FPS frames/sec ^-1 -> sec/frames * 1000 -> ms/frame
@@ -36,6 +37,7 @@ const EMPTY_GUN_SOUND_PATH: &str = "./assets/audio/empty_gun.mp3";
 const RELOAD_SOUND_PATH: &str = "./assets/audio/gun_reload.mp3";
 const VIEWMODEL_PATH: &str = "./assets/sprites/viewmodel.png";
 const VIEWMODEL_RELOAD_PATH: &str = "./assets/sprites/viewmodel_reload.png";
+const DEFUSE_PATH: &str = "./assets/audio/defuse.mp3";
 const BOX_TEXTURE_PATH: &str = "./assets/sprites/box.png";
 const FLOOR_TEXTURE_PATH: &str = "./assets/sprites/sand_floor.png";
 const BRICKS_TEXTURE_PATH: &str = "./assets/sprites/sand_bricks.png";
@@ -255,6 +257,7 @@ fn render2D(
     map_size: usize,
     x: usize,
     y: usize,
+    enemies: &mut Vec<Enemy>,
 ) {
     let maze_height = maze.grid.len();
     let maze_width = maze.grid.iter().map(Vec::len).max().unwrap();
@@ -271,17 +274,37 @@ fn render2D(
             let cell = maze.grid[grid_y][grid_x];
 
             match cell {
-                '┌' | '┐' | '┘' | '└' => {
-                    fb.set_current_color(CORNER_COLOR);
+                '1' | '2' => {
+                    fb.set_current_color(BOMB_COLOR);
                 }
-                '╶' | '╴' | '╵' | '╷' => {
-                    fb.set_current_color(EDGE_COLOR);
+                'T' => {
+                    let e = enemies.iter().find(|enemy| {
+                        let e_grid_x = (enemy.pos.x / maze.block_size as f32) as usize;
+                        let e_grid_y = (enemy.pos.y / maze.block_size as f32) as usize;
+
+                        e_grid_x == grid_x && e_grid_y == grid_y
+                    });
+
+                    match e {
+                        Some(e) if e.active => {
+                            fb.set_current_color(ENEMY_COLOR);
+                        }
+                        Some(_) => {
+                            fb.set_current_color(FLOOR_COLOR);
+                        }
+                        None => {
+                            fb.set_current_color(FLOOR_COLOR);
+                        }
+                    }
                 }
-                '┴' | '┬' | '├' | '┤' => {
-                    fb.set_current_color(T_COLOR);
+                'B' => {
+                    fb.set_current_color(BOX_COLOR);
                 }
-                ' ' => {
+                ' ' | 'P' => {
                     fb.set_current_color(FLOOR_COLOR);
+                }
+                '-' => {
+                    fb.set_current_color(OOB_COLOR);
                 }
                 _ => fb.set_current_color(WALL_COLOR),
             }
@@ -330,8 +353,8 @@ fn render2D(
 fn main() -> std::io::Result<()> {
     let window_width = 1280;
     let window_height = 720;
-    let framebuffer_width = (window_width as f32 / 2.0) as u32;
-    let framebuffer_height = (window_height as f32 / 2.0) as u32;
+    let framebuffer_width = (window_width as f32 / 1.6) as u32;
+    let framebuffer_height = (window_height as f32 / 1.6) as u32;
 
     let audio = RaylibAudio::init_audio_device().expect("audio init fail");
     let music = audio
@@ -349,6 +372,10 @@ fn main() -> std::io::Result<()> {
     let reload = audio
         .new_sound(RELOAD_SOUND_PATH)
         .expect("failed to load gun reload sound effects");
+
+    let defuse = audio
+        .new_sound(DEFUSE_PATH)
+        .expect("failed to load defuse sound effects");
 
     let (mut window, raylib_thread) = raylib::init()
         .size(window_width, window_height)
@@ -414,6 +441,11 @@ fn main() -> std::io::Result<()> {
     let mut enemies = Enemy::from_maze(&maze);
     let mut current_gun_cooldown = 0.0;
     let mut current_reload_cooldown = 0.0;
+    let mut current_defuse_counter = 0.0;
+    let mut has_defused = false;
+    let mut defused_A = false;
+    let mut defused_B = false;
+    let mut current_defused: u8 = 0;
     let mut bullets: Vec<Bullet> = Vec::new();
 
     // Image::load_image para cargar a ram
@@ -453,6 +485,27 @@ fn main() -> std::io::Result<()> {
 
         if player.reloading {
             current_reload_cooldown += window.get_frame_time();
+        }
+
+        let grid_x = (player.pos.x / maze.block_size as f32) as usize;
+        let grid_y = (player.pos.y / maze.block_size as f32) as usize;
+        let player_on_site = maze.grid[grid_y][grid_x] == '1' || maze.grid[grid_y][grid_x] == '2';
+        let defused_current_site = (maze.grid[grid_y][grid_x] == '1' && defused_A)
+            || (maze.grid[grid_y][grid_x] == '2' && defused_B);
+        let not_defused_current_site = (maze.grid[grid_y][grid_x] == '1' && !defused_A)
+            || (maze.grid[grid_y][grid_x] == '2' && !defused_B);
+
+        if player.defusing && player_on_site && not_defused_current_site {
+            current_defuse_counter += window.get_frame_time();
+            if !has_defused {
+                has_defused = true;
+                if !defuse.is_playing() {
+                    defuse.play();
+                }
+            }
+        } else {
+            current_defuse_counter = 0.0;
+            has_defused = false;
         }
 
         if player.fired && player.ammo > 0 && !player.reloading {
@@ -495,6 +548,18 @@ fn main() -> std::io::Result<()> {
             current_gun_cooldown = 0.0;
         }
 
+        if current_defuse_counter >= player.defuse_time {
+            if maze.grid[grid_y][grid_x] == '1' {
+                defused_A = true;
+            } else if maze.grid[grid_y][grid_x] == '2' {
+                defused_B = true;
+            }
+            current_defused += 1;
+            player.defusing = false;
+            has_defused = false;
+            current_defuse_counter = 0.0;
+        }
+
         render2D(
             &mut player,
             &mut maze,
@@ -502,6 +567,7 @@ fn main() -> std::io::Result<()> {
             125usize,
             25usize,
             25usize,
+            &mut enemies,
         );
 
         let active_viewmodel = if player.reloading {
@@ -521,6 +587,10 @@ fn main() -> std::io::Result<()> {
             active_viewmodel,
             viewmodel_dest,
             player.ammo,
+            (current_defuse_counter * 100.0).round() / 100.0,
+            player.defusing && player_on_site,
+            current_defused,
+            defused_current_site,
         );
 
         thread::sleep(Duration::from_millis(MS));

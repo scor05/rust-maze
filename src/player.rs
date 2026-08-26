@@ -12,6 +12,8 @@ pub struct Player {
     pub ammo: u8,
     pub reloading: bool,
     pub reload_time: f32,
+    pub defusing: bool,
+    pub defuse_time: f32,
 }
 
 impl Player {
@@ -24,6 +26,8 @@ impl Player {
             ammo: 7,
             reloading: false,
             reload_time: 2.2,
+            defusing: false,
+            defuse_time: 5.0,
         }
     }
 }
@@ -36,7 +40,7 @@ pub fn process_input(player: &mut Player, rl: &mut RaylibHandle, maze: &mut Maze
     // delta time para medir tiempo entre frames y usar eso
     // en vez de actualizar la lógica cada frame
     let dt = rl.get_frame_time();
-    let mut move_step = MOVE_SPEED * dt;
+    let move_step = MOVE_SPEED * dt;
     let mut running_speed_mult = 1.0;
 
     if rl.is_key_down(KeyboardKey::KEY_LEFT_SHIFT) {
@@ -49,6 +53,15 @@ pub fn process_input(player: &mut Player, rl: &mut RaylibHandle, maze: &mut Maze
     // delta retorna cambio de mouse pos desde el frame pasado
     let mouse_delta = rl.get_mouse_delta().scale(1.0 / 500.0);
     player.a += mouse_delta.x;
+
+    let grid_x = (player.pos.x / maze.block_size as f32) as usize;
+    let grid_y = (player.pos.y / maze.block_size as f32) as usize;
+    let on_site = maze.grid[grid_y][grid_x] == '1' || maze.grid[grid_y][grid_x] == '2';
+    if rl.is_key_down(KeyboardKey::KEY_E) && on_site {
+        player.defusing = true;
+    } else if !rl.is_key_down(KeyboardKey::KEY_E) {
+        player.defusing = false;
+    }
 
     if rl.is_key_pressed(KeyboardKey::KEY_R) && !player.reloading && player.ammo < 7 {
         player.reloading = true;

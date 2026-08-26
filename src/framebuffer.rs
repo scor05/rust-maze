@@ -146,6 +146,10 @@ impl Framebuffer {
         viewmodel: &Texture2D,
         viewmodel_dest: Rectangle,
         ammo: u8,
+        defuse_counter: f32,
+        defusing: bool,
+        current_defused: u8,
+        defused_current_site: bool,
     ) {
         self.screen_texture
             .update_texture(&self.color_buffer)
@@ -161,11 +165,17 @@ impl Framebuffer {
         let ammo_x = win_width - ammo_width - ammo_margin;
         let ammo_y = win_height - ammo_font_size - ammo_margin;
 
-        let controls_text = format!("Movement: WASD\nShoot: LMB\nSprint: LSHIFT\nReload: R");
+        let controls_text = "Movement: WASD\nShoot: LMB\nSprint: LSHIFT\nReload: R\nDefuse: E";
         let controls_text_size = 20;
         let controls_text_width = window.measure_text(&controls_text, controls_text_size);
         let controls_x = win_width - controls_text_width - 10;
         let controls_y = controls_text_size - 10;
+
+        let defuse_text = format!("Defusing: {defuse_counter}");
+        let defuse_text_size = 35;
+
+        let bomb_text = format!("Bombs Defused: {current_defused}/2");
+        let bomb_text_size = 35;
 
         let mut renderer = window.begin_drawing(raylib_thread);
 
@@ -198,6 +208,34 @@ impl Framebuffer {
             Color::WHITE,
         );
 
+        if defusing && !defused_current_site {
+            draw_outlined_text(
+                &mut renderer,
+                &defuse_text,
+                win_width / 2 - 40,
+                defuse_text_size + 10,
+                defuse_text_size,
+                2,
+            );
+        } else if defusing && defused_current_site {
+            draw_outlined_text(
+                &mut renderer,
+                "Site already defused.",
+                win_width / 2 - 40,
+                40,
+                35,
+                2,
+            );
+        }
+
+        draw_outlined_text(
+            &mut renderer,
+            &bomb_text,
+            10,
+            win_height - bomb_text_size - 20,
+            bomb_text_size,
+            2,
+        );
         draw_outlined_text(&mut renderer, &fps_text, 12, 10, 18, 2);
         draw_outlined_text(&mut renderer, &ammo_text, ammo_x, ammo_y, ammo_font_size, 2);
         draw_outlined_text(

@@ -53,7 +53,7 @@ impl WorldTextures {
     pub fn floor_color(&self, symbol: char, u: f32, v: f32) -> Color {
         let floor_color = self.floor.sample(u, v);
 
-        if symbol == 'X' {
+        if symbol == '1' || symbol == '2' {
             let site_color = self.defuse_site.sample(u, v);
             Color::color_alpha_blend(&floor_color, &site_color, &Color::WHITE)
         } else {
