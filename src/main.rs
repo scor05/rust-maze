@@ -2,6 +2,7 @@ mod bullet;
 mod caster;
 mod enemy;
 mod framebuffer;
+mod helpers;
 mod map;
 mod maze;
 mod player;
@@ -11,26 +12,20 @@ use crate::bullet::Bullet;
 use crate::caster::*;
 use crate::enemy::{Enemy, draw_enemies};
 use crate::framebuffer::Framebuffer;
+use crate::helpers::*;
 use crate::map::Map;
 use crate::maze::Maze;
 use crate::player::{Player, process_input};
 use crate::world_textures::{CpuTexture, WorldTextures};
 use raylib::prelude::*;
 use std::f32::consts::PI;
-use std::thread;
-use std::time::Duration;
 
 const SKY_COLOR: Color = Color::SKYBLUE;
-const FLOOR_COLOR: Color = Color::GRAY;
-const OOB_COLOR: Color = Color::BLACK;
-const BOX_COLOR: Color = Color::new(77, 33, 12, 0xff);
-const WALL_COLOR: Color = Color::new(251, 255, 219, 0xff);
 const ENEMY_COLOR: Color = Color::new(255, 0, 0, 255);
-const BOMB_COLOR: Color = Color::new(225, 255, 0, 255);
 const FOV: f32 = PI / 3.0;
-const FPS: u64 = 500;
-// FPS frames/sec ^-1 -> sec/frames * 1000 -> ms/frame
-const MS: u64 = 1000 / FPS;
+const FPS: u32 = 120;
+const MAP_SIZE: usize = 250;
+const MAP_POS: usize = 35;
 const BACKGROUND_MUSIC_PATH: &str = "./assets/audio/Rip & Tear - Mick Gordon (128k).mp3";
 const GUN_SOUND_PATH: &str = "./assets/audio/deagle.mp3";
 const EMPTY_GUN_SOUND_PATH: &str = "./assets/audio/empty_gun.mp3";
@@ -50,8 +45,6 @@ const DE_DUST2: &str = "./dust2.txt";
 const DE_MIRAGE: &str = "./mirage.txt";
 const DE_CACHE: &str = "./cache.txt";
 const DE_INFERNO: &str = "./inferno.txt";
-const VIEWMODEL_HEIGHT_RATIO: f32 = 0.62;
-const VIEWMODEL_RIGHT_OFFSET: f32 = 110.0;
 const BULLET_SIZE: f32 = 2.5;
 const BULLET_COLOR: Color = Color::new(255, 40, 40, 255);
 const BULLET_INITIAL_OFFSET: f32 = 10.0;
@@ -136,42 +129,6 @@ fn draw_bullets(
     bullets.retain(|b| b.active);
 }
 
-fn draw_filled_circle(
-    fb: &mut Framebuffer,
-    center_x: i32,
-    center_y: i32,
-    radius: i32,
-    color: Color,
-) {
-    for offset_x in -radius..=radius {
-        let squared_height = radius * radius - offset_x * offset_x; // r^2 - x^2 = y^2
-
-        let half_height = (squared_height as f32).sqrt() as i32;
-
-        let pixel_x = center_x + offset_x;
-
-        for pixel_y in center_y - half_height..=center_y + half_height {
-            if pixel_x >= 0 && pixel_y >= 0 {
-                fb.set_current_color(color);
-                fb.set_pixel(pixel_x as u32, pixel_y as u32);
-            }
-        }
-    }
-}
-
-fn viewmodel_destination(texture: &Texture2D, screen_width: i32, screen_height: i32) -> Rectangle {
-    let target_height = screen_height as f32 * VIEWMODEL_HEIGHT_RATIO;
-    let scale = target_height / texture.height() as f32;
-    let target_width = texture.width() as f32 * scale;
-
-    Rectangle::new(
-        screen_width as f32 - target_width - VIEWMODEL_RIGHT_OFFSET,
-        screen_height as f32 - target_height,
-        target_width,
-        target_height,
-    )
-}
-
 fn render3D(
     player: &mut Player,
     maze: &mut Maze,
@@ -254,67 +211,22 @@ fn render2D(
     player: &mut Player,
     maze: &mut Maze,
     fb: &mut Framebuffer,
-    map_size: usize,
-    x: usize,
-    y: usize,
     enemies: &mut Vec<Enemy>,
+    static_pixels: &mut Vec<PixelColor>,
 ) {
     let maze_height = maze.grid.len();
     let maze_width = maze.grid.iter().map(Vec::len).max().unwrap();
 
-    let scale_factor = map_size as f32 / maze_width.max(maze_height) as f32;
-    let rendered_width = (maze_width as f32 * scale_factor) as usize;
-    let rendered_height = (maze_height as f32 * scale_factor) as usize;
+    let scale_factor = MAP_SIZE as f32 / maze_width.max(maze_height) as f32;
 
-    for map_y in 0..rendered_height {
-        let grid_y = ((map_y as f32 / scale_factor) as usize).min(maze_height - 1);
-
-        for map_x in 0..rendered_width {
-            let grid_x = ((map_x as f32 / scale_factor) as usize).min(maze_width - 1);
-            let cell = maze.grid[grid_y][grid_x];
-
-            match cell {
-                '1' | '2' => {
-                    fb.set_current_color(BOMB_COLOR);
-                }
-                'T' => {
-                    let e = enemies.iter().find(|enemy| {
-                        let e_grid_x = (enemy.pos.x / maze.block_size as f32) as usize;
-                        let e_grid_y = (enemy.pos.y / maze.block_size as f32) as usize;
-
-                        e_grid_x == grid_x && e_grid_y == grid_y
-                    });
-
-                    match e {
-                        Some(e) if e.active => {
-                            fb.set_current_color(ENEMY_COLOR);
-                        }
-                        Some(_) => {
-                            fb.set_current_color(FLOOR_COLOR);
-                        }
-                        None => {
-                            fb.set_current_color(FLOOR_COLOR);
-                        }
-                    }
-                }
-                'B' => {
-                    fb.set_current_color(BOX_COLOR);
-                }
-                ' ' | 'P' => {
-                    fb.set_current_color(FLOOR_COLOR);
-                }
-                '-' => {
-                    fb.set_current_color(OOB_COLOR);
-                }
-                _ => fb.set_current_color(WALL_COLOR),
-            }
-
-            fb.set_pixel((x + map_x) as u32, (y + map_y) as u32);
-        }
+    // mapa
+    for p in static_pixels {
+        fb.set_current_color(p.color);
+        fb.set_pixel(p.x, p.y);
     }
 
-    let player_x = player.pos.x * (scale_factor / maze.block_size as f32) + x as f32;
-    let player_y = player.pos.y * (scale_factor / maze.block_size as f32) + y as f32;
+    let player_x = player.pos.x * (scale_factor / maze.block_size as f32) + MAP_POS as f32;
+    let player_y = player.pos.y * (scale_factor / maze.block_size as f32) + MAP_POS as f32;
     let player_size = 2; // rect de 2*playersize + 1
 
     // dibujar fov 2d
@@ -348,13 +260,29 @@ fn render2D(
             fb.set_pixel(x, y);
         }
     }
+
+    // enemigos
+    let alive_enemies = enemies.iter().filter(|e| e.active);
+    fb.set_current_color(ENEMY_COLOR);
+    for e in alive_enemies {
+        let enemy_x = e.pos.x * (scale_factor / maze.block_size as f32) + MAP_POS as f32;
+        let enemy_y = e.pos.y * (scale_factor / maze.block_size as f32) + MAP_POS as f32;
+
+        // usar player_size para que los enemigos sean del mismo tamaño que el jugador
+        for x in enemy_x as u32 - player_size..enemy_x as u32 + player_size {
+            for y in enemy_y as u32 - player_size..enemy_y as u32 + player_size {
+                fb.set_pixel(x, y);
+            }
+        }
+    }
 }
 
 fn main() -> std::io::Result<()> {
     let window_width = 1280;
     let window_height = 720;
-    let framebuffer_width = (window_width as f32 / 1.6) as u32;
-    let framebuffer_height = (window_height as f32 / 1.6) as u32;
+    // downscaling
+    let framebuffer_width = (window_width as f32 / 1.25) as u32;
+    let framebuffer_height = (window_height as f32 / 1.25) as u32;
 
     let audio = RaylibAudio::init_audio_device().expect("audio init fail");
     let music = audio
@@ -420,6 +348,7 @@ fn main() -> std::io::Result<()> {
 
     // lock cursor para solo la pantalla
     window.disable_cursor();
+    window.set_target_fps(FPS);
 
     let mut framebuffer = Framebuffer::new(
         framebuffer_width,
@@ -450,6 +379,8 @@ fn main() -> std::io::Result<()> {
 
     // Image::load_image para cargar a ram
     // window.load_texture para cargar a tarjeta de video
+
+    let mut static_radar_pixels = get_static_radar_pixels(&maze, MAP_SIZE, MAP_POS, MAP_POS);
 
     while !window.window_should_close() {
         if !music.is_playing() {
@@ -564,10 +495,8 @@ fn main() -> std::io::Result<()> {
             &mut player,
             &mut maze,
             &mut framebuffer,
-            125usize,
-            25usize,
-            25usize,
             &mut enemies,
+            &mut static_radar_pixels,
         );
 
         let active_viewmodel = if player.reloading {
@@ -592,8 +521,6 @@ fn main() -> std::io::Result<()> {
             current_defused,
             defused_current_site,
         );
-
-        thread::sleep(Duration::from_millis(MS));
     }
 
     Ok(())
