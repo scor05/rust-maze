@@ -5,7 +5,7 @@ Este es un juego hecho con Rust y su librería de gráficas Raylib que trata de 
 ---
 ## Video de funcionamiento/demostración
 
-El video demostrando cómo funciona el juego se puede encontrar [en este enlace]().
+El video demostrando cómo funciona el juego se puede encontrar [en este enlace](https://youtu.be/_WslzFJKgvM).
 
 ---
 ## Cómo jugar
