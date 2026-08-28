@@ -1,4 +1,3 @@
-use crate::bullet::Bullet;
 use crate::caster::cast_ray;
 use crate::maze::Maze;
 use raylib::prelude::*;
@@ -9,7 +8,9 @@ pub struct Player {
     pub a: f32, // ángulo del jugador
     pub fired: bool,
     pub gun_cooldown: f32,
-    pub ammo: u8,
+    pub ammo: i8,
+    pub max_ammo: i8,
+    pub mag: i8,
     pub reloading: bool,
     pub reload_time: f32,
     pub defusing: bool,
@@ -24,6 +25,8 @@ impl Player {
             fired: false,
             gun_cooldown: 0.35,
             ammo: 7,
+            max_ammo: 7,
+            mag: 35,
             reloading: false,
             reload_time: 2.2,
             defusing: false,
@@ -32,7 +35,7 @@ impl Player {
     }
 }
 
-pub fn process_input(player: &mut Player, rl: &mut RaylibHandle, maze: &mut Maze) {
+pub fn process_ingame_input(player: &mut Player, rl: &mut RaylibHandle, maze: &mut Maze) {
     const MOVE_SPEED: f32 = 300.0;
     const ROTATION_SPEED: f32 = PI / 0.75;
     const COLLISION_MARGIN: f32 = 6.0;
@@ -57,13 +60,18 @@ pub fn process_input(player: &mut Player, rl: &mut RaylibHandle, maze: &mut Maze
     let grid_x = (player.pos.x / maze.block_size as f32) as usize;
     let grid_y = (player.pos.y / maze.block_size as f32) as usize;
     let on_site = maze.grid[grid_y][grid_x] == '1' || maze.grid[grid_y][grid_x] == '2';
+
     if rl.is_key_down(KeyboardKey::KEY_E) && on_site {
         player.defusing = true;
     } else if !rl.is_key_down(KeyboardKey::KEY_E) {
         player.defusing = false;
     }
 
-    if rl.is_key_pressed(KeyboardKey::KEY_R) && !player.reloading && player.ammo < 7 {
+    if rl.is_key_pressed(KeyboardKey::KEY_R)
+        && !player.reloading
+        && player.ammo < player.max_ammo
+        && player.mag > 0
+    {
         player.reloading = true;
     }
 

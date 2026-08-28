@@ -1,14 +1,22 @@
+use crate::bullet::Bullet;
+use crate::caster::{cast_bullet_ray, cast_ray};
+use crate::enemy::Enemy;
 use crate::framebuffer::Framebuffer;
 use crate::maze::Maze;
+use crate::player::Player;
+use crate::{
+    BOMB_COLOR, BOX_COLOR, BULLET_COLOR, BULLET_SPEED, FLOOR_COLOR, FOV, OOB_COLOR,
+    VIEWMODEL_HEIGHT_RATIO, VIEWMODEL_RIGHT_OFFSET, WALL_COLOR,
+};
 use raylib::prelude::*;
 
-const FLOOR_COLOR: Color = Color::GRAY;
-const OOB_COLOR: Color = Color::BLACK;
-const BOX_COLOR: Color = Color::new(77, 33, 12, 0xff);
-const WALL_COLOR: Color = Color::new(251, 255, 219, 0xff);
-const BOMB_COLOR: Color = Color::new(225, 255, 0, 255);
-const VIEWMODEL_HEIGHT_RATIO: f32 = 0.62;
-const VIEWMODEL_RIGHT_OFFSET: f32 = 110.0;
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum GameState {
+    MainMenu,
+    MapSelect,
+    InGame,
+    Victory,
+}
 
 pub struct PixelColor {
     pub x: u32,
@@ -16,6 +24,17 @@ pub struct PixelColor {
     pub color: Color,
 }
 
+pub struct HudElements {
+    pub ammo: i8,
+    pub mag: i8,
+    pub defuse_counter: f32,
+    pub defusing: bool,
+    pub current_defused: u8,
+    pub defused_current_site: bool,
+}
+
+// el mapa en sí nunca cambia, saltar los checks de renderizar pixeles estáticos cada frame y solo
+// renderizarlo una vez
 pub fn get_static_radar_pixels(
     maze: &Maze,
     map_size: usize,
@@ -116,4 +135,81 @@ pub fn viewmodel_destination(
         target_width,
         target_height,
     )
+}
+
+pub fn draw_bullets(
+    player: &mut Player,
+    maze: &mut Maze,
+    fb: &mut Framebuffer,
+    bullets: &mut Vec<Bullet>,
+    enemies: &mut [Enemy],
+    dt: f32,
+) {
+    let projection_distance = (fb.width as f32 / 2.0) / (FOV / 2.0).tan();
+
+    let forward_x = player.a.cos();
+    let forward_y = player.a.sin();
+
+    let right_x = -player.a.sin();
+    let right_y = player.a.cos();
+
+    for b in bullets.iter_mut() {
+        let travel_distance = BULLET_SPEED * dt;
+        let bullet_direction = Vector2::new(b.a.cos(), b.a.sin());
+        let wall_hit = cast_bullet_ray(b.a, maze, b, travel_distance);
+        let enemy_hit =
+            Enemy::first_hit_by_bullet(enemies, b.pos, bullet_direction, b.radius, travel_distance);
+
+        if let Some((enemy_index, enemy_distance)) = enemy_hit
+            && wall_hit
+                .as_ref()
+                .is_none_or(|wall| enemy_distance < wall.dist)
+        {
+            enemies[enemy_index].active = false;
+            b.active = false;
+            continue;
+        }
+
+        if wall_hit.is_some() {
+            b.active = false;
+            continue;
+        }
+
+        b.pos += bullet_direction * travel_distance;
+
+        let relative_x = b.pos.x - player.pos.x;
+        let relative_y = b.pos.y - player.pos.y;
+
+        let depth = relative_x * forward_x + relative_y * forward_y;
+        let sideways = relative_x * right_x + relative_y * right_y;
+
+        if depth <= 0.0 {
+            continue;
+        }
+
+        // no dibujar balas que estén detrás de una pared
+        let distance_to_bullet = relative_x.hypot(relative_y);
+        let angle_to_bullet = relative_y.atan2(relative_x);
+        let distance_to_wall = cast_ray(angle_to_bullet, maze, player).dist;
+
+        if distance_to_wall < distance_to_bullet - b.radius {
+            continue;
+        }
+
+        let screen_x = fb.width as f32 / 2.0 + sideways * projection_distance / depth;
+        let screen_y = fb.height as f32 / 2.0;
+        let screen_radius = b.radius * projection_distance / depth;
+
+        if b.active {
+            draw_filled_circle(
+                fb,
+                screen_x as i32,
+                screen_y as i32,
+                screen_radius as i32,
+                BULLET_COLOR,
+            );
+        }
+    }
+
+    bullets.retain(|b| b.active);
 }

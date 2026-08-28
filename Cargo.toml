@@ -7,4 +7,4 @@ edition = "2024"
 opt-level = 3
 
 [dependencies]
-raylib = { version = "6.0.0", features = ["SUPPORT_IMAGE_GENERATION"] }
+raylib = { version = "6.0.0", features = ["SUPPORT_IMAGE_GENERATION", "SUPPORT_FILEFORMAT_JPG"] }

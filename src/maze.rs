@@ -1,6 +1,7 @@
 use std::fs;
 use std::io;
 
+#[derive(Clone)]
 pub struct Maze {
     pub block_size: usize,
     pub grid: Vec<Vec<char>>,
